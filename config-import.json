@@ -1,0 +1,107 @@
+{
+  "config.version": "2.0",
+  "config.project.from.csv": "false",
+  "config.encoding": "UTF-8",
+  "config.file.id": null,
+  "config.email.suffix": "@",
+  "config.file.name": null,
+  "config.field.mappings": {
+    "Status": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10925"
+    },
+    "Impact": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10782"
+    },
+    "Platforms": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10774"
+    },
+    "Description": {
+      "jira.field": "description",
+      "userChanged": "true",
+      "manualMapping": "false"
+    },
+    "Countries": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10770"
+    },
+    "Categories": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10771"
+    },
+    "Target Date": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10635"
+    },
+    "Effort": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10866"
+    },
+    "Notion Doc": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10779"
+    },
+    "Squads": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10799"
+    },
+    "Product Area": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10784"
+    },
+    "Plan": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10773"
+    },
+    "Goal": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10667"
+    },
+    "Roadmap": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10772"
+    },
+    "Start Date": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10634"
+    },
+    "Summary": {
+      "jira.field": "summary",
+      "userChanged": "true",
+      "manualMapping": "false"
+    },
+    "Team": {
+      "userChanged": "true",
+      "manualMapping": "false",
+      "existing.custom.field": "10001"
+    }
+  },
+  "config.csv.file.id": null,
+  "config.value.mappings": {},
+  "config.delimiter": ",",
+  "config.project": {
+    "project.type": null,
+    "project.key": null,
+    "project.description": null,
+    "project.url": null,
+    "project.name": null,
+    "project.lead": null
+  },
+  "config.date.format": "dd/MMM/yy h:mm a"
+}

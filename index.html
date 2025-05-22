@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Convertisseur CSV Notion → Jira Product Discovery</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+      }
+      input,
+      button {
+        margin: 10px 0;
+      }
+      #tableContainer {
+        overflow-x: auto;
+        border: 1px solid #ccc;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        margin-top: 20px;
+      }
+      th,
+      td {
+        border: 1px solid #ccc;
+        padding: 8px;
+        text-align: left;
+        white-space: normal;
+        word-wrap: break-word;
+      }
+      th {
+        cursor: pointer;
+        background: #eee;
+        position: relative;
+        white-space: normal;
+      }
+      th .header-label {
+        position: relative;
+        display: block;
+        width: 100%;
+      }
+      #downloadLinks {
+        margin-bottom: 20px;
+      }
+      #downloadLinks ul {
+        list-style-type: none;
+        padding-left: 0;
+      }
+      #downloadLinks li {
+        margin-bottom: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Convertisseur CSV Notion → Jira Product Discovery</h1>
+
+    <label>Choisissez votre fichier CSV export Notion :</label><br />
+    <input type="file" id="fileInput" accept=".csv" />
+
+    <button id="processBtn" disabled>Convertir & Générer CSV Jira</button>
+
+    <div id="downloadLinks">
+      <ul id="downloadList"></ul>
+    </div>
+
+    <!-- Bouton téléchargement config -->
+    <button id="downloadConfigBtn" style="margin-top: 20px">
+      Télécharger le fichier de config de l'import
+    </button>
+
+    <div id="tableContainer"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+    <script>
+      // Table de vérité pour les équipes
+      const teamIdMap = {
+        HR: "266cbcf9-299d-44c5-a60c-f7300daf1883",
+        Scheduling: "51ef8fc3-9d3a-4078-960c-b461e6e559f7",
+        Engines: "5fc018d5-f1ef-4beb-9a58-de3654eb4711",
+        TAI: "65aa95a3-2590-4745-9da9-3b5ba9793f8d",
+        Mobile: "9157bfe4-92fa-4d60-b635-8cdafb588250",
+        Foundations: "96fb8a62-8b42-4d8b-b449-843d574ae665",
+        Payroll: "a2baaf0b-e089-4918-b1c2-e7efbbcb6d25",
+        Legal: "a3c8dad8-5788-4d41-b507-32be7c0a12a3",
+        "Payroll Integration": "bb9ee60f-272c-4069-aad1-092f878984ae",
+      };
+
+      // Nettoie une chaîne "Nom (https://lien)" → "Nom"
+      function cleanTeamName(name) {
+        if (!name) return "";
+        return name.replace(/\s*\(.*?\)/g, "").trim();
+      }
+
+      // Nettoie les parenthèses dans un champ (ex Product Area)
+      function cleanFieldParentheses(str) {
+        if (!str) return "";
+        return str.replace(/\s*\(.*?\)/g, "").trim();
+      }
+
+      // Parse liste de squads/teams, nettoie chaque nom et retourne tableau unique
+      function parseSquads(raw) {
+        if (!raw) return [];
+        return raw
+          .split(",")
+          .map((s) => cleanTeamName(s))
+          .filter((s) => s.length > 0)
+          .map((s) => (s === "Tools & Infrastructure" ? "TAI" : s)); // Remplace "Tools & Infrastructure" par "TAI"
+      }
+
+      // Parse champ multi-valeurs en array, trim, enlève vides
+      function parseMultiField(val) {
+        if (!val) return [];
+        return val
+          .split(",")
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+      }
+
+      // Format date au format dd/MMM/yy h:mm a, ex : 21/May/25 2:00 PM
+      function formatDateForJira(dateStr) {
+        if (!dateStr) return "";
+        const moisFR = [
+          "janvier",
+          "février",
+          "mars",
+          "avril",
+          "mai",
+          "juin",
+          "juillet",
+          "août",
+          "septembre",
+          "octobre",
+          "novembre",
+          "décembre",
+        ];
+        const moisEN = [
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "May",
+          "Jun",
+          "Jul",
+          "Aug",
+          "Sep",
+          "Oct",
+          "Nov",
+          "Dec",
+        ];
+        let d = null;
+        try {
+          let regex = /(\d{1,2})\s+([a-zéû]+)\s+(\d{4})/i;
+          let m = dateStr.match(regex);
+          if (m) {
+            let day = parseInt(m[1], 10);
+            let monthIndex = moisFR.indexOf(m[2].toLowerCase());
+            let year = parseInt(m[3], 10);
+            if (monthIndex >= 0) {
+              d = new Date(year, monthIndex, day, 14, 0); // fixe 14:00 = 2PM
+            }
+          }
+        } catch (e) {}
+        if (!d) return "";
+        let dayStr = d.getDate().toString().padStart(2, "0");
+        let monthStr = moisEN[d.getMonth()];
+        let yearStr = d.getFullYear().toString().slice(-2);
+        let hour = d.getHours();
+        let ampm = hour >= 12 ? "PM" : "AM";
+        hour = hour % 12;
+        if (hour === 0) hour = 12;
+        let minuteStr = d.getMinutes().toString().padStart(2, "0");
+        return `${dayStr}/${monthStr}/${yearStr} ${hour}:${minuteStr} ${ampm}`;
+      }
+
+      // Mapping règles business
+      function mapRow(notionRow) {
+        let goalMap = {
+          "Launch Combo Pay": "Launch Combo Payroll",
+          "Enhancing our solution to reach 110% NRR":
+            "Enhance the Combo experience / Improve NRR",
+        };
+        let devicesMap = {
+          Web: "Combo App",
+        };
+        function mapCountries(geo) {
+          if (!geo) return [];
+          const cleaned = geo.replace(/only/gi, "").trim();
+          const countries = cleaned.split(",").map((c) => c.trim());
+          const allowed = ["France", "Spain"];
+          const filtered = countries.filter((c) => allowed.includes(c));
+          if (filtered.length > 0) {
+            return filtered;
+          }
+          if (cleaned.toLowerCase().includes("all countries")) {
+            return ["France", "Spain"];
+          }
+          return [];
+        }
+        function mapStatus(status) {
+          return status || "Parking lot";
+        }
+        function mapRoadmap(pf) {
+          if (!pf) return "";
+          if (pf.toLowerCase() === "released") return "Done";
+          if (pf.toLowerCase() === "won't do for now") return "Won't do";
+          return pf;
+        }
+
+        const squadsFromField = parseSquads(notionRow.Squad);
+        const depsFromField = parseSquads(notionRow["Squad Dependencies"]); // parse Squad Dependencies too
+        const allSquadsSet = new Set([...squadsFromField, ...depsFromField]);
+        const allSquads = Array.from(allSquadsSet);
+
+        // Remplace les noms des équipes par leurs ID respectifs dans Team
+        const team =
+          squadsFromField.length > 0
+            ? teamIdMap[squadsFromField[0]] || squadsFromField[0]
+            : "";
+
+        let goals = goalMap.hasOwnProperty(notionRow["Product Goal"])
+          ? [goalMap[notionRow["Product Goal"]]]
+          : [];
+        let plans = parseMultiField(notionRow["Plan"]);
+        let platforms = devicesMap[notionRow["Devices"]]
+          ? [devicesMap[notionRow["Devices"]]]
+          : parseMultiField(notionRow["Devices"]);
+        let countries = mapCountries(notionRow["Geography"]);
+
+        // Impact
+        let impact = notionRow["Impact (1-4)"] || "";
+        // Outcome → Description
+        let description = notionRow["Outcome"] || "";
+
+        return {
+          Summary: notionRow["Release Name"] || "",
+          Goal: goals,
+          Countries: countries,
+          Plan: plans,
+          Platforms: platforms,
+          "Product Area":
+            cleanFieldParentheses(notionRow["Product Cartography"]) || "",
+          Roadmap: mapRoadmap(notionRow["Planned For"]),
+          Squads: allSquads,
+          Status: mapStatus(notionRow["Status"]),
+          "Target Date": formatDateForJira(notionRow["Actual Release Date"]),
+          "Start Date": formatDateForJira(notionRow["Date de création"]),
+          Team: team,
+          Impact: impact,
+          Description: description,
+          Effort: notionRow["Effort (XS to XL)"] || "",
+          "Notion Doc": notionRow["Direct URL (for export)"] || "",
+          Categories: "Roadmap Delivery",
+        };
+      }
+
+      // Explode multi columns avec clés uniques côté JS,
+      // MAIS affiche dans le tableau & CSV juste le nom de champ (ex: "Countries") sans #num
+      function explodeMultiColumnsUniqueKeys(data, fields) {
+        const uniqueValues = {};
+        fields.forEach((f) => (uniqueValues[f] = new Set()));
+
+        data.forEach((row) => {
+          fields.forEach((f) => {
+            let vals = row[f];
+            if (Array.isArray(vals)) {
+              vals.forEach((v) => uniqueValues[f].add(v));
+            }
+          });
+        });
+
+        Object.keys(uniqueValues).forEach((f) => {
+          uniqueValues[f] = Array.from(uniqueValues[f]).sort();
+        });
+
+        const newData = data.map((row) => {
+          const newRow = { ...row };
+          fields.forEach((f) => {
+            uniqueValues[f].forEach((val, idx) => {
+              const key = `${f}#${idx + 1}`;
+              if (Array.isArray(row[f]) && row[f].includes(val)) {
+                newRow[key] = val;
+              } else {
+                newRow[key] = "";
+              }
+            });
+            delete newRow[f];
+          });
+          return newRow;
+        });
+
+        const headers = [];
+
+        const fixedFields = Object.keys(newData[0]).filter(
+          (k) => !fields.some((f) => k.startsWith(f + "#"))
+        );
+
+        if (fixedFields.includes("Summary")) {
+          headers.push({ key: "Summary", label: "Summary" });
+        }
+
+        fields.forEach((f) => {
+          uniqueValues[f].forEach((_, idx) => {
+            headers.push({ key: `${f}#${idx + 1}`, label: f });
+          });
+        });
+
+        fixedFields.forEach((f) => {
+          if (f !== "Summary") {
+            headers.push({ key: f, label: f });
+          }
+        });
+
+        return { newData, headers };
+      }
+
+      // Diviser les données en chunks
+      function chunkData(data, size) {
+        const chunks = [];
+        for (let i = 0; i < data.length; i += size) {
+          chunks.push(data.slice(i, i + size));
+        }
+        return chunks;
+      }
+
+      // Générer CSV avec headers
+      function generateCSVWithLabels(data, keys, labels) {
+        const csvRows = [];
+        csvRows.push(labels.map((l) => `"${l}"`).join(","));
+        data.forEach((row) => {
+          const vals = keys.map((k) => {
+            let v = row[k] || "";
+            if (v.includes('"')) v = v.replace(/"/g, '""');
+            return `"${v}"`;
+          });
+          csvRows.push(vals.join(","));
+        });
+        return csvRows.join("\n");
+      }
+
+      // Affichage tableau
+      function displayTable(data, headers) {
+        if (data.length === 0) {
+          document.getElementById("tableContainer").innerHTML =
+            "<p>Aucune donnée.</p>";
+          return;
+        }
+        let html = '<table id="resultTable"><thead><tr>';
+        headers.forEach((h) => {
+          html += `<th><span class="header-label">${h.label}</span></th>`;
+        });
+        html += "</tr></thead><tbody>";
+        data.forEach((row) => {
+          html += "<tr>";
+          headers.forEach((h) => {
+            html += `<td>${row[h.key] || ""}</td>`;
+          });
+          html += "</tr>";
+        });
+        html += "</tbody></table>";
+        document.getElementById("tableContainer").innerHTML = html;
+      }
+
+      // Téléchargement du fichier de config JSON via Blob
+      document
+        .getElementById("downloadConfigBtn")
+        .addEventListener("click", () => {
+          const configData = {
+            "config.version": "2.0",
+            "config.project.from.csv": "false",
+            "config.encoding": "UTF-8",
+            "config.file.id": null,
+            "config.email.suffix": "@",
+            "config.file.name": null,
+            "config.field.mappings": {
+              Status: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10925",
+              },
+              Impact: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10782",
+              },
+              Platforms: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10774",
+              },
+              Description: {
+                "jira.field": "description",
+                userChanged: "true",
+                manualMapping: "false",
+              },
+              Countries: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10770",
+              },
+              Categories: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10771",
+              },
+              "Target Date": {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10635",
+              },
+              Effort: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10866",
+              },
+              "Notion Doc": {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10779",
+              },
+              Squads: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10799",
+              },
+              "Product Area": {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10784",
+              },
+              Plan: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10773",
+              },
+              Goal: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10667",
+              },
+              Roadmap: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10772",
+              },
+              "Start Date": {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10634",
+              },
+              Summary: {
+                "jira.field": "summary",
+                userChanged: "true",
+                manualMapping: "false",
+              },
+              Team: {
+                userChanged: "true",
+                manualMapping: "false",
+                "existing.custom.field": "10001",
+              },
+            },
+            "config.csv.file.id": null,
+            "config.value.mappings": {},
+            "config.delimiter": ",",
+            "config.project": {
+              "project.type": null,
+              "project.key": null,
+              "project.description": null,
+              "project.url": null,
+              "project.name": null,
+              "project.lead": null,
+            },
+            "config.date.format": "dd/MMM/yy h:mm a",
+          };
+
+          const blob = new Blob([JSON.stringify(configData, null, 2)], {
+            type: "application/json",
+          });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = "config.txt";
+          link.click();
+        });
+
+      // Lecture fichier CSV Notion
+      document.getElementById("fileInput").addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          window.csvNotionRaw = evt.target.result;
+          document.getElementById("processBtn").disabled = false;
+        };
+        reader.readAsText(file);
+      });
+
+      // Bouton traitement CSV
+      document.getElementById("processBtn").addEventListener("click", () => {
+        if (!window.csvNotionRaw) {
+          alert("Veuillez d'abord choisir un fichier CSV Notion.");
+          return;
+        }
+        const notionData = Papa.parse(window.csvNotionRaw, {
+          header: true,
+          skipEmptyLines: true,
+        }).data;
+        let jpdData = notionData.map(mapRow);
+        const multiFields = [
+          "Goal",
+          "Countries",
+          "Plan",
+          "Platforms",
+          "Squads",
+        ];
+        const { newData, headers } = explodeMultiColumnsUniqueKeys(
+          jpdData,
+          multiFields
+        );
+        displayTable(newData, headers);
+        const chunks = chunkData(newData, 200);
+        let downloadLinks = document.getElementById("downloadList");
+        downloadLinks.innerHTML = "";
+        chunks.forEach((chunk, idx) => {
+          const csvHeaders = headers.map((h) => h.label);
+          const csvKeys = headers.map((h) => h.key);
+          const csvOut = generateCSVWithLabels(chunk, csvKeys, csvHeaders);
+
+          let dlLink = document.createElement("a");
+          dlLink.style.display = "inline-block";
+          dlLink.style.margin = "10px 0";
+          dlLink.textContent = `Télécharger CSV Jira Product Discovery - Partie ${
+            idx + 1
+          }`;
+
+          let li = document.createElement("li");
+          li.appendChild(dlLink);
+          downloadLinks.appendChild(li);
+
+          const blob = new Blob([csvOut], { type: "text/csv;charset=utf-8;" });
+          dlLink.href = URL.createObjectURL(blob);
+          dlLink.download = `jira_product_discovery_${idx + 1}.csv`;
+        });
+      });
+    </script>
+  </body>
+</html>
