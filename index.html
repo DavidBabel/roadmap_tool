@@ -64,7 +64,7 @@
       <ul id="downloadList"></ul>
     </div>
 
-    <!-- Bouton téléchargement config -->
+    <!-- Nouveau bouton pour télécharger le fichier de config via Blob -->
     <button id="downloadConfigBtn" style="margin-top: 20px">
       Télécharger le fichier de config de l'import
     </button>
@@ -176,6 +176,8 @@
 
       // Mapping règles business
       function mapRow(notionRow) {
+        if (!notionRow["Product Goal"]) return null; // Ignorer les lignes sans Product Goal
+
         let goalMap = {
           "Launch Combo Pay": "Launch Combo Payroll",
           "Enhancing our solution to reach 110% NRR":
@@ -197,9 +199,6 @@
             return ["France", "Spain"];
           }
           return [];
-        }
-        function mapStatus(status) {
-          return status || "Parking lot";
         }
         function mapRoadmap(pf) {
           if (!pf) return "";
@@ -228,10 +227,30 @@
           : parseMultiField(notionRow["Devices"]);
         let countries = mapCountries(notionRow["Geography"]);
 
-        // Impact
-        let impact = notionRow["Impact (1-4)"] || "";
+        // Impact : remplacement de la virgule par un point puis arrondi à l'entier inférieur
+        let impact = notionRow["Impact (1-4)"];
+        if (impact) {
+          // Remplacer la virgule par un point
+          impact = impact.replace(",", ".");
+          if (!isNaN(impact)) {
+            impact = Math.floor(parseFloat(impact)); // Arrondi à l'entier inférieur
+          } else {
+            impact = "";
+          }
+        } else {
+          impact = "";
+        }
+
         // Outcome → Description
         let description = notionRow["Outcome"] || "";
+
+        // Product Area : Si plusieurs, ne garder que le premier
+        let productArea = notionRow["Product Cartography"]
+          ? notionRow["Product Cartography"].split(",")[0]
+          : "";
+
+        // Platforms : Si "Web" est présent, le remplacer par "Combo App"
+        platforms = platforms.map((p) => (p === "Web" ? "Combo App" : p));
 
         return {
           Summary: notionRow["Release Name"] || "",
@@ -239,11 +258,10 @@
           Countries: countries,
           Plan: plans,
           Platforms: platforms,
-          "Product Area":
-            cleanFieldParentheses(notionRow["Product Cartography"]) || "",
+          "Product Area": cleanFieldParentheses(productArea) || "",
           Roadmap: mapRoadmap(notionRow["Planned For"]),
           Squads: allSquads,
-          Status: mapStatus(notionRow["Status"]),
+          Status: notionRow["Status"] || "", // Pas de modification de Status
           "Target Date": formatDateForJira(notionRow["Actual Release Date"]),
           "Start Date": formatDateForJira(notionRow["Date de création"]),
           Team: team,
@@ -331,7 +349,8 @@
         data.forEach((row) => {
           const vals = keys.map((k) => {
             let v = row[k] || "";
-            if (v.includes('"')) v = v.replace(/"/g, '""');
+            if (typeof v === "string" && v.includes('"'))
+              v = v.replace(/"/g, '""');
             return `"${v}"`;
           });
           csvRows.push(vals.join(","));
@@ -505,7 +524,7 @@
           header: true,
           skipEmptyLines: true,
         }).data;
-        let jpdData = notionData.map(mapRow);
+        let jpdData = notionData.map(mapRow).filter((row) => row !== null); // Filtrer les lignes sans "Product Goal"
         const multiFields = [
           "Goal",
           "Countries",
