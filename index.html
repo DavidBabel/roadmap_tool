@@ -118,60 +118,49 @@
           .filter((s) => s.length > 0);
       }
 
-      // Format date au format dd/MMM/yy h:mm a, ex : 21/May/25 2:00 PM
+      // Format date au format "MMM dd, yyyy", ex : "Jun 16, 2025"
       function formatDateForJira(dateStr) {
-        if (!dateStr) return "";
-        const moisFR = [
-          "janvier",
-          "février",
-          "mars",
-          "avril",
-          "mai",
-          "juin",
-          "juillet",
-          "août",
-          "septembre",
-          "octobre",
-          "novembre",
-          "décembre",
-        ];
-        const moisEN = [
-          "Jan",
-          "Feb",
-          "Mar",
-          "Apr",
-          "May",
-          "Jun",
-          "Jul",
-          "Aug",
-          "Sep",
-          "Oct",
-          "Nov",
-          "Dec",
-        ];
-        let d = null;
-        try {
-          let regex = /(\d{1,2})\s+([a-zéû]+)\s+(\d{4})/i;
-          let m = dateStr.match(regex);
-          if (m) {
-            let day = parseInt(m[1], 10);
-            let monthIndex = moisFR.indexOf(m[2].toLowerCase());
-            let year = parseInt(m[3], 10);
-            if (monthIndex >= 0) {
-              d = new Date(year, monthIndex, day, 14, 0); // fixe 14:00 = 2PM
-            }
+        if (!dateStr) return ""; // Si la date est vide, retourner une chaîne vide.
+
+        const date = new Date(dateStr);
+        if (isNaN(date)) {
+          // Si la date est invalide, tenter de la reformater manuellement
+          const monthsFR = {
+            janvier: "Jan",
+            février: "Feb",
+            mars: "Mar",
+            avril: "Apr",
+            mai: "May",
+            juin: "Jun",
+            juillet: "Jul",
+            août: "Aug",
+            septembre: "Sep",
+            octobre: "Oct",
+            novembre: "Nov",
+            décembre: "Dec",
+          };
+
+          // Essayer de transformer une date au format "jour mois année"
+          const regex = /(\d{1,2})\s([a-zéû]+)\s(\d{4})/i;
+          const match = dateStr.match(regex);
+
+          if (match) {
+            const day = match[1].padStart(2, "0");
+            const month = monthsFR[match[2].toLowerCase()];
+            const year = match[3];
+            return `${month} ${day}, ${year}`;
           }
-        } catch (e) {}
-        if (!d) return "";
-        let dayStr = d.getDate().toString().padStart(2, "0");
-        let monthStr = moisEN[d.getMonth()];
-        let yearStr = d.getFullYear().toString().slice(-2);
-        let hour = d.getHours();
-        let ampm = hour >= 12 ? "PM" : "AM";
-        hour = hour % 12;
-        if (hour === 0) hour = 12;
-        let minuteStr = d.getMinutes().toString().padStart(2, "0");
-        return `${dayStr}/${monthStr}/${yearStr} ${hour}:${minuteStr} ${ampm}`;
+          return ""; // Si la date ne peut pas être convertie, retourner vide
+        }
+
+        // Format par défaut si la date est valide
+        const options = {
+          year: "numeric",
+          month: "short", // Format court pour le mois (ex: "Jan", "Feb", etc.)
+          day: "numeric",
+        };
+
+        return date.toLocaleDateString("en-US", options); // Utilisation de 'en-US' pour garantir le format "MMM dd, yyyy"
       }
 
       // Mapping règles business
@@ -252,6 +241,12 @@
         // Platforms : Si "Web" est présent, le remplacer par "Combo App"
         platforms = platforms.map((p) => (p === "Web" ? "Combo App" : p));
 
+        // Formatage des dates
+        const projectStart = formatDateForJira(
+          notionRow["Actual Release Date"]
+        );
+        const projectTarget = formatDateForJira(notionRow["Date de création"]);
+
         return {
           Summary: notionRow["Release Name"] || "",
           Goal: goals,
@@ -262,8 +257,8 @@
           Roadmap: mapRoadmap(notionRow["Planned For"]),
           Squads: allSquads,
           Status: notionRow["Status"] || "", // Pas de modification de Status
-          "Target Date": formatDateForJira(notionRow["Actual Release Date"]),
-          "Start Date": formatDateForJira(notionRow["Date de création"]),
+          "Project start": projectStart, // Utilisation de "Actual Release Date" pour "Project start"
+          "Project target": projectTarget, // Utilisation de "Date de création" pour "Project target"
           Team: team,
           Impact: impact,
           Description: description,
