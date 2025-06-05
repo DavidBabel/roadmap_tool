@@ -64,7 +64,6 @@
       <ul id="downloadList"></ul>
     </div>
 
-    <!-- Nouveau bouton pour télécharger le fichier de config via Blob -->
     <button id="downloadConfigBtn" style="margin-top: 20px">
       Télécharger le fichier de config de l'import
     </button>
@@ -74,7 +73,6 @@
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
     <script>
-      // Table de vérité pour les équipes
       const teamIdMap = {
         HR: "266cbcf9-299d-44c5-a60c-f7300daf1883",
         Scheduling: "51ef8fc3-9d3a-4078-960c-b461e6e559f7",
@@ -87,29 +85,16 @@
         "Payroll Integration": "bb9ee60f-272c-4069-aad1-092f878984ae",
       };
 
-      // Nettoie une chaîne "Nom (https://lien)" → "Nom"
       function cleanTeamName(name) {
         if (!name) return "";
         return name.replace(/\s*\(.*?\)/g, "").trim();
       }
 
-      // Nettoie les parenthèses dans un champ (ex Product Area)
       function cleanFieldParentheses(str) {
         if (!str) return "";
         return str.replace(/\s*\(.*?\)/g, "").trim();
       }
 
-      // Parse liste de squads/teams, nettoie chaque nom et retourne tableau unique
-      function parseSquads(raw) {
-        if (!raw) return [];
-        return raw
-          .split(",")
-          .map((s) => cleanTeamName(s))
-          .filter((s) => s.length > 0)
-          .map((s) => (s === "Tools & Infrastructure" ? "TAI" : s)); // Remplace "Tools & Infrastructure" par "TAI"
-      }
-
-      // Parse champ multi-valeurs en array, trim, enlève vides
       function parseMultiField(val) {
         if (!val) return [];
         return val
@@ -118,54 +103,50 @@
           .filter((s) => s.length > 0);
       }
 
-      // Format date au format "MMM dd, yyyy", ex : "Jun 16, 2025"
-      function formatDateForJira(dateStr) {
-        if (!dateStr) return ""; // Si la date est vide, retourner une chaîne vide.
-
-        const date = new Date(dateStr);
-        if (isNaN(date)) {
-          // Si la date est invalide, tenter de la reformater manuellement
-          const monthsFR = {
-            janvier: "Jan",
-            février: "Feb",
-            mars: "Mar",
-            avril: "Apr",
-            mai: "May",
-            juin: "Jun",
-            juillet: "Jul",
-            août: "Aug",
-            septembre: "Sep",
-            octobre: "Oct",
-            novembre: "Nov",
-            décembre: "Dec",
-          };
-
-          // Essayer de transformer une date au format "jour mois année"
-          const regex = /(\d{1,2})\s([a-zéû]+)\s(\d{4})/i;
-          const match = dateStr.match(regex);
-
-          if (match) {
-            const day = match[1].padStart(2, "0");
-            const month = monthsFR[match[2].toLowerCase()];
-            const year = match[3];
-            return `${month} ${day}, ${year}`;
-          }
-          return ""; // Si la date ne peut pas être convertie, retourner vide
-        }
-
-        // Format par défaut si la date est valide
-        const options = {
-          year: "numeric",
-          month: "short", // Format court pour le mois (ex: "Jan", "Feb", etc.)
-          day: "numeric",
-        };
-
-        return date.toLocaleDateString("en-US", options); // Utilisation de 'en-US' pour garantir le format "MMM dd, yyyy"
+      function parseSquads(raw) {
+        if (!raw) return [];
+        return raw
+          .split(",")
+          .map((s) => cleanTeamName(s))
+          .filter((s) => s.length > 0)
+          .map((s) => (s === "Tools & Infrastructure" ? "TAI" : s));
       }
 
-      // Mapping règles business
+      function formatDateForJira(inputDate) {
+        const dateRegex = /(\d+)\s([a-zA-Zéè]+)\s(\d+)/;
+        const match = inputDate.match(dateRegex);
+
+        if (!match) {
+          throw new Error("Format de date non reconnu");
+        }
+
+        const day = match[1].padStart(2, "0");
+        const monthName = match[2].toLowerCase();
+        const year = match[3];
+
+        const monthNames = {
+          janvier: "01",
+          février: "02",
+          mars: "03",
+          avril: "04",
+          mai: "05",
+          juin: "06",
+          juillet: "07",
+          août: "08",
+          septembre: "09",
+          octobre: "10",
+          novembre: "11",
+          décembre: "12",
+        };
+
+        const month = monthNames[monthName];
+        const formattedDate = `${year}-${month}-${day}`;
+
+        return { start: formattedDate, end: formattedDate };
+      }
+
       function mapRow(notionRow) {
-        if (!notionRow["Product Goal"]) return null; // Ignorer les lignes sans Product Goal
+        if (!notionRow["Product Goal"]) return null;
 
         let goalMap = {
           "Launch Combo Pay": "Launch Combo Payroll",
@@ -175,6 +156,7 @@
         let devicesMap = {
           Web: "Combo App",
         };
+
         function mapCountries(geo) {
           if (!geo) return [];
           const cleaned = geo.replace(/only/gi, "").trim();
@@ -189,6 +171,7 @@
           }
           return [];
         }
+
         function mapRoadmap(pf) {
           if (!pf) return "";
           if (pf.toLowerCase() === "released") return "Done";
@@ -197,11 +180,10 @@
         }
 
         const squadsFromField = parseSquads(notionRow.Squad);
-        const depsFromField = parseSquads(notionRow["Squad Dependencies"]); // parse Squad Dependencies too
+        const depsFromField = parseSquads(notionRow["Squad Dependencies"]);
         const allSquadsSet = new Set([...squadsFromField, ...depsFromField]);
         const allSquads = Array.from(allSquadsSet);
 
-        // Remplace les noms des équipes par leurs ID respectifs dans Team
         const team =
           squadsFromField.length > 0
             ? teamIdMap[squadsFromField[0]] || squadsFromField[0]
@@ -216,13 +198,11 @@
           : parseMultiField(notionRow["Devices"]);
         let countries = mapCountries(notionRow["Geography"]);
 
-        // Impact : remplacement de la virgule par un point puis arrondi à l'entier inférieur
         let impact = notionRow["Impact (1-4)"];
         if (impact) {
-          // Remplacer la virgule par un point
           impact = impact.replace(",", ".");
           if (!isNaN(impact)) {
-            impact = Math.floor(parseFloat(impact)); // Arrondi à l'entier inférieur
+            impact = Math.floor(parseFloat(impact));
           } else {
             impact = "";
           }
@@ -230,18 +210,14 @@
           impact = "";
         }
 
-        // Outcome → Description
         let description = notionRow["Outcome"] || "";
 
-        // Product Area : Si plusieurs, ne garder que le premier
         let productArea = notionRow["Product Cartography"]
           ? notionRow["Product Cartography"].split(",")[0]
           : "";
 
-        // Platforms : Si "Web" est présent, le remplacer par "Combo App"
         platforms = platforms.map((p) => (p === "Web" ? "Combo App" : p));
 
-        // Formatage des dates
         const projectStart = formatDateForJira(
           notionRow["Actual Release Date"]
         );
@@ -256,9 +232,9 @@
           "Product Area": cleanFieldParentheses(productArea) || "",
           Roadmap: mapRoadmap(notionRow["Planned For"]),
           Squads: allSquads,
-          Status: notionRow["Status"] || "", // Pas de modification de Status
-          "Project start": projectStart, // Utilisation de "Actual Release Date" pour "Project start"
-          "Project target": projectTarget, // Utilisation de "Date de création" pour "Project target"
+          Status: notionRow["Status"] || "",
+          "Project start": JSON.stringify(projectStart),
+          "Project target": JSON.stringify(projectTarget),
           Team: team,
           Impact: impact,
           Description: description,
@@ -268,8 +244,6 @@
         };
       }
 
-      // Explode multi columns avec clés uniques côté JS,
-      // MAIS affiche dans le tableau & CSV juste le nom de champ (ex: "Countries") sans #num
       function explodeMultiColumnsUniqueKeys(data, fields) {
         const uniqueValues = {};
         fields.forEach((f) => (uniqueValues[f] = new Set()));
@@ -328,7 +302,6 @@
         return { newData, headers };
       }
 
-      // Diviser les données en chunks
       function chunkData(data, size) {
         const chunks = [];
         for (let i = 0; i < data.length; i += size) {
@@ -337,7 +310,6 @@
         return chunks;
       }
 
-      // Générer CSV avec headers
       function generateCSVWithLabels(data, keys, labels) {
         const csvRows = [];
         csvRows.push(labels.map((l) => `"${l}"`).join(","));
@@ -353,7 +325,6 @@
         return csvRows.join("\n");
       }
 
-      // Affichage tableau
       function displayTable(data, headers) {
         if (data.length === 0) {
           document.getElementById("tableContainer").innerHTML =
@@ -376,7 +347,64 @@
         document.getElementById("tableContainer").innerHTML = html;
       }
 
-      // Téléchargement du fichier de config JSON via Blob
+      document.getElementById("fileInput").addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          window.csvNotionRaw = evt.target.result;
+          document.getElementById("processBtn").disabled = false;
+        };
+        reader.readAsText(file);
+      });
+
+      document.getElementById("processBtn").addEventListener("click", () => {
+        if (!window.csvNotionRaw) {
+          alert("Veuillez d'abord choisir un fichier CSV Notion.");
+          return;
+        }
+        const notionData = Papa.parse(window.csvNotionRaw, {
+          header: true,
+          skipEmptyLines: true,
+        }).data;
+        let jpdData = notionData.map(mapRow).filter((row) => row !== null);
+        const multiFields = [
+          "Goal",
+          "Countries",
+          "Plan",
+          "Platforms",
+          "Squads",
+        ];
+        const { newData, headers } = explodeMultiColumnsUniqueKeys(
+          jpdData,
+          multiFields
+        );
+        displayTable(newData, headers);
+        const chunks = chunkData(newData, 200);
+        let downloadLinks = document.getElementById("downloadList");
+        downloadLinks.innerHTML = "";
+        chunks.forEach((chunk, idx) => {
+          const csvHeaders = headers.map((h) => h.label);
+          const csvKeys = headers.map((h) => h.key);
+          const csvOut = generateCSVWithLabels(chunk, csvKeys, csvHeaders);
+
+          let dlLink = document.createElement("a");
+          dlLink.style.display = "inline-block";
+          dlLink.style.margin = "10px 0";
+          dlLink.textContent = `Télécharger CSV Jira Product Discovery - Partie ${
+            idx + 1
+          }`;
+
+          let li = document.createElement("li");
+          li.appendChild(dlLink);
+          downloadLinks.appendChild(li);
+
+          const blob = new Blob([csvOut], { type: "text/csv;charset=utf-8;" });
+          dlLink.href = URL.createObjectURL(blob);
+          dlLink.download = `jira_product_discovery_${idx + 1}.csv`;
+        });
+      });
+
       document
         .getElementById("downloadConfigBtn")
         .addEventListener("click", () => {
@@ -495,7 +523,7 @@
               "project.name": null,
               "project.lead": null,
             },
-            "config.date.format": "dd/MMM/yy h:mm a",
+            "config.date.format": "yyyy-MM-dd",
           };
 
           const blob = new Blob([JSON.stringify(configData, null, 2)], {
@@ -506,66 +534,6 @@
           link.download = "config.txt";
           link.click();
         });
-
-      // Lecture fichier CSV Notion
-      document.getElementById("fileInput").addEventListener("change", (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-          window.csvNotionRaw = evt.target.result;
-          document.getElementById("processBtn").disabled = false;
-        };
-        reader.readAsText(file);
-      });
-
-      // Bouton traitement CSV
-      document.getElementById("processBtn").addEventListener("click", () => {
-        if (!window.csvNotionRaw) {
-          alert("Veuillez d'abord choisir un fichier CSV Notion.");
-          return;
-        }
-        const notionData = Papa.parse(window.csvNotionRaw, {
-          header: true,
-          skipEmptyLines: true,
-        }).data;
-        let jpdData = notionData.map(mapRow).filter((row) => row !== null); // Filtrer les lignes sans "Product Goal"
-        const multiFields = [
-          "Goal",
-          "Countries",
-          "Plan",
-          "Platforms",
-          "Squads",
-        ];
-        const { newData, headers } = explodeMultiColumnsUniqueKeys(
-          jpdData,
-          multiFields
-        );
-        displayTable(newData, headers);
-        const chunks = chunkData(newData, 200);
-        let downloadLinks = document.getElementById("downloadList");
-        downloadLinks.innerHTML = "";
-        chunks.forEach((chunk, idx) => {
-          const csvHeaders = headers.map((h) => h.label);
-          const csvKeys = headers.map((h) => h.key);
-          const csvOut = generateCSVWithLabels(chunk, csvKeys, csvHeaders);
-
-          let dlLink = document.createElement("a");
-          dlLink.style.display = "inline-block";
-          dlLink.style.margin = "10px 0";
-          dlLink.textContent = `Télécharger CSV Jira Product Discovery - Partie ${
-            idx + 1
-          }`;
-
-          let li = document.createElement("li");
-          li.appendChild(dlLink);
-          downloadLinks.appendChild(li);
-
-          const blob = new Blob([csvOut], { type: "text/csv;charset=utf-8;" });
-          dlLink.href = URL.createObjectURL(blob);
-          dlLink.download = `jira_product_discovery_${idx + 1}.csv`;
-        });
-      });
     </script>
   </body>
 </html>
