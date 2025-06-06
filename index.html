@@ -218,10 +218,10 @@
 
         platforms = platforms.map((p) => (p === "Web" ? "Combo App" : p));
 
-        const projectStart = formatDateForJira(
+        const projectStart = formatDateForJira(notionRow["Date de création"]);
+        const projectTarget = formatDateForJira(
           notionRow["Actual Release Date"]
         );
-        const projectTarget = formatDateForJira(notionRow["Date de création"]);
 
         return {
           Summary: notionRow["Release Name"] || "",
