@@ -113,11 +113,13 @@
       }
 
       function formatDateForJira(inputDate) {
-        const dateRegex = /(\d+)\s([a-zA-Zéè]+)\s(\d+)/;
+        // Utiliser une expression régulière pour capturer uniquement la partie date
+        const dateRegex = /(\d{1,2})\s([a-zA-Zéè]+)\s(\d{4})/;
         const match = inputDate.match(dateRegex);
 
         if (!match) {
-          throw new Error("Format de date non reconnu");
+          console.error("Format de date non reconnu:", inputDate);
+          return { start: "", end: "" };
         }
 
         const day = match[1].padStart(2, "0");
@@ -140,8 +142,12 @@
         };
 
         const month = monthNames[monthName];
-        const formattedDate = `${year}-${month}-${day}`;
+        if (!month) {
+          console.error("Mois non reconnu:", monthName);
+          return { start: "", end: "" };
+        }
 
+        const formattedDate = `${year}-${month}-${day}`;
         return { start: formattedDate, end: formattedDate };
       }
 
